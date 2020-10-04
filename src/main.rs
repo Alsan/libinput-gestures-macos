@@ -19,11 +19,17 @@ use std::process::Stdio;
 use std::task::Poll as FuturesPoll;
 use tokio::io::PollEvented;
 use tokio::process::Command;
+use xdg::BaseDirectories;
 use yaml_rust::YamlLoader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let content = fs::read_to_string("/home/alsan/.config/libinput-gestures-macos.conf")
-        .expect("Unable to read config file");
+    let xdg_dirs = BaseDirectories::with_prefix("libinput-gestures-macos").unwrap();
+    let config_path = xdg_dirs
+        .place_config_file("config.ini")
+        .expect("cannot create configuration directory");
+
+    let content =
+        fs::read_to_string(config_path.to_str().unwrap()).expect("Unable to read config file");
     let docs = YamlLoader::load_from_str(content.as_str()).expect("Unexpected config content");
     let doc = &docs[0];
     let device = doc["device"]
