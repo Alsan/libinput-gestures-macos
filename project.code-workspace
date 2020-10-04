@@ -1,0 +1,23 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+    "eslint.enable": false,
+    "editor.quickSuggestions": {
+      "other": true,
+      "comments": true,
+      "strings": true
+    },
+    "editor.fontFamily": "Source Code Pro",
+    "editor.fontLigatures": true,
+    "editor.fontSize": 16,
+    "editor.lineHeight": 24,
+    "editor.lineNumbers": "on",
+    "editor.minimap.enabled": false,
+    "editor.renderIndentGuides": true,
+    "editor.rulers": [120, 240, 360]
+  }
+}
