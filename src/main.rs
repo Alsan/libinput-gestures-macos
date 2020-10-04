@@ -20,7 +20,7 @@ use std::task::Poll as FuturesPoll;
 use tokio::io::PollEvented;
 use tokio::process::Command;
 use xdg::BaseDirectories;
-use yaml_rust::YamlLoader;
+use yaml_rust::{Yaml, YamlLoader};
 
 fn get_conf_filename() -> String {
     let xdg_dirs = BaseDirectories::with_prefix("libinput-gestures-macos").unwrap();
@@ -31,30 +31,57 @@ fn get_conf_filename() -> String {
     return config_path.to_str().unwrap().to_string();
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn get_conf_yaml() -> Vec<Yaml> {
     let conf_filename = get_conf_filename();
     let content = fs::read_to_string(conf_filename.as_str()).expect("Unable to read config file");
-    let docs = YamlLoader::load_from_str(content.as_str()).expect("Unexpected config content");
-    let doc = &docs[0];
-    let device = doc["device"]
+
+    return YamlLoader::load_from_str(content.as_str()).expect("Unexpected config content");
+}
+
+fn get_device_setting(conf_yaml: &Yaml) -> String {
+    return conf_yaml["device"]
         .as_str()
-        .unwrap_or("/dev/input/by-path/pci-0000:00:15.1-platform-i2c_designware.1-event-mouse");
-    let swipe_vdelta_threadhold = doc["swipe"]["threshold"]["vdelta"]
+        .unwrap_or("/dev/input/by-path/pci-0000:00:15.1-platform-i2c_designware.1-event-mouse")
+        .to_string();
+}
+
+fn get_swipe_vdelta_threshold(conf_yaml: &Yaml) -> f64 {
+    return conf_yaml["swipe"]["threshold"]["vdelta"]
         .as_f64()
         .unwrap_or(0.00175);
-    let left_swipe_action = doc["swipe"]["action"]["left"]
-        .as_str()
-        .unwrap_or("super+shift+Left");
-    let right_swipe_action = doc["swape"]["action"]["right"]
-        .as_str()
-        .unwrap_or("super+shift+Right");
-    let left_swipe_keybind = &["key", left_swipe_action];
-    let right_swipe_keybind = &["key", right_swipe_action];
+}
 
+fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+
+    match c.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+    }
+}
+
+fn get_swipe_action(conf_yaml: &Yaml, dir: &str) -> String {
+    let cap_dir = capitalize(dir);
+
+    return conf_yaml["swipe"]["action"][dir]
+        .as_str()
+        .unwrap_or(cap_dir.as_str())
+        .to_string();
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let yml_docs = get_conf_yaml();
+    let conf_yaml = &yml_docs[0];
+    let device = get_device_setting(conf_yaml);
+    let swipe_vdelta_threshold = get_swipe_vdelta_threshold(conf_yaml);
+    let left_swipe_action = get_swipe_action(conf_yaml, "left");
+    let right_swipe_action = get_swipe_action(conf_yaml, "right");
+    let left_swipe_keybind = &["key", left_swipe_action.as_str()];
+    let right_swipe_keybind = &["key", right_swipe_action.as_str()];
     let mut rt = tokio::runtime::Runtime::new()?;
 
     rt.block_on(async {
-        let mut context = LibinputContext::open(device).map_err(|_| {
+        let mut context = LibinputContext::open(device.as_str()).map_err(|_| {
             std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "failed to create libinput context",
@@ -104,7 +131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // This cancels out weird events where the user scrolled/swiped both left
                             // and right or their touchpad picked up something weird.
                             if let Some((vdelta, cmd)) = result {
-                                if vdelta.abs() >= swipe_vdelta_threadhold {
+                                if vdelta.abs() >= swipe_vdelta_threshold {
                                     launch_xdotool(cmd);
                                 }
                             }
