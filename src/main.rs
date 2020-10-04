@@ -11,6 +11,7 @@ use nix::{
     sys::stat::Mode,
     unistd::close,
 };
+use std::fs;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::io::RawFd;
 use std::path::Path;
@@ -18,16 +19,32 @@ use std::process::Stdio;
 use std::task::Poll as FuturesPoll;
 use tokio::io::PollEvented;
 use tokio::process::Command;
-
-const TOUCH_DEVICE: &str = "/dev/input/by-path/pci-0000:00:15.1-platform-i2c_designware.1-event-mouse";
-const SWIPE_VDELTA_THRESHOLD: f64 = 0.00175;
-const LEFT_SWIPE_ACTION: &[&str] = &["key", "super+shift+Left"];
-const RIGHT_SWIPE_ACTION: &[&str] = &["key", "super+shift+Right"];
+use yaml_rust::YamlLoader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let content = fs::read_to_string("/home/alsan/.config/libinput-gestures-macos.conf")
+        .expect("Unable to read config file");
+    let docs = YamlLoader::load_from_str(content.as_str()).expect("Unexpected config content");
+    let doc = &docs[0];
+    let device = doc["device"]
+        .as_str()
+        .unwrap_or("/dev/input/by-path/pci-0000:00:15.1-platform-i2c_designware.1-event-mouse");
+    let swipe_vdelta_threadhold = doc["swipe"]["threshold"]["vdelta"]
+        .as_f64()
+        .unwrap_or(0.00175);
+    let left_swipe_action = doc["swipe"]["action"]["left"]
+        .as_str()
+        .unwrap_or("super+shift+Left");
+    let right_swipe_action = doc["swape"]["action"]["right"]
+        .as_str()
+        .unwrap_or("super+shift+Right");
+    let left_swipe_keybind = &["key", left_swipe_action];
+    let right_swipe_keybind = &["key", right_swipe_action];
+
     let mut rt = tokio::runtime::Runtime::new()?;
+
     rt.block_on(async {
-        let mut context = LibinputContext::open(TOUCH_DEVICE).map_err(|_| {
+        let mut context = LibinputContext::open(device).map_err(|_| {
             std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "failed to create libinput context",
@@ -67,9 +84,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // fingers right to left (left swipe), you're swiping the page to the left,
                             // or pulling the next page to you, and vise versa.  Just like a book.
                             let result = if lvdelta.is_some() && rvdelta.is_none() {
-                                Some((lvdelta.unwrap(), LEFT_SWIPE_ACTION))
+                                Some((lvdelta.unwrap(), left_swipe_keybind))
                             } else if rvdelta.is_some() && lvdelta.is_none() {
-                                Some((rvdelta.unwrap(), RIGHT_SWIPE_ACTION))
+                                Some((rvdelta.unwrap(), right_swipe_keybind))
                             } else {
                                 None
                             };
@@ -77,7 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // This cancels out weird events where the user scrolled/swiped both left
                             // and right or their touchpad picked up something weird.
                             if let Some((vdelta, cmd)) = result {
-                                if vdelta.abs() >= SWIPE_VDELTA_THRESHOLD {
+                                if vdelta.abs() >= swipe_vdelta_threadhold {
                                     launch_xdotool(cmd);
                                 }
                             }

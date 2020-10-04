@@ -10,3 +10,9 @@ nix = "^0.16"
 tokio = { features = ["rt-threaded", "process"] }
 mio = "^0.6"
 futures = { version = "^0.3", default-features = false, features = ["std"] }
+serde = { version = "^1.0.116", optional = true, features = ["derive"] }
+yaml-rust = "0.4.4"
+
+[features]
+default = ["std"]
+std = [ "serde" ]
