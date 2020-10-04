@@ -22,14 +22,18 @@ use tokio::process::Command;
 use xdg::BaseDirectories;
 use yaml_rust::YamlLoader;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn get_conf_filename() -> String {
     let xdg_dirs = BaseDirectories::with_prefix("libinput-gestures-macos").unwrap();
     let config_path = xdg_dirs
         .place_config_file("config.ini")
-        .expect("cannot create configuration directory");
+        .expect("Cannot create configuration directory");
 
-    let content =
-        fs::read_to_string(config_path.to_str().unwrap()).expect("Unable to read config file");
+    return config_path.to_str().unwrap().to_string();
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let conf_filename = get_conf_filename();
+    let content = fs::read_to_string(conf_filename.as_str()).expect("Unable to read config file");
     let docs = YamlLoader::load_from_str(content.as_str()).expect("Unexpected config content");
     let doc = &docs[0];
     let device = doc["device"]
