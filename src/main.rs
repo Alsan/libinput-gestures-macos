@@ -106,6 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "failed to create libinput context",
             )
         })?;
+
         context.resume().map_err(|_| {
             std::io::Error::new(
                 std::io::ErrorKind::Other,
@@ -124,6 +125,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if pae.has_axis(Axis::Horizontal) && pae.axis_source() == AxisSource::Finger {
                         // Track which direction the swipe is going.
                         let av = pae.axis_value(Axis::Horizontal);
+
                         if av < 0.0 {
                             left_swipe.measure_event(pae.time_usec(), av);
                         } else if av > 0.0 {
@@ -168,6 +170,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn launch_xdotool(cmd_opts: &[&str]) {
     let mut cmd = Command::new("xdotool");
+
     cmd.args(cmd_opts)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -250,6 +253,7 @@ impl LibinputContext {
     pub async fn next(&mut self) -> Result<Event, ()> {
         loop {
             let _ = self.0.dispatch().map_err(|_| ())?;
+
             match self.0.next() {
                 Some(e) => return Ok(e),
                 None => {
