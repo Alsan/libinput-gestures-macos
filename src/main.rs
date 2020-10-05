@@ -73,30 +73,38 @@ impl Config {
             .unwrap_or(0.00175);
     }
 
-    fn capitalize(&self, s: &str) -> String {
-        let mut c = s.chars();
+    // fn capitalize(&self, s: &str) -> String {
+    //     let mut c = s.chars();
 
-        match c.next() {
-            None => String::new(),
-            Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-        }
-    }
+    //     match c.next() {
+    //         None => String::new(),
+    //         Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+    //     }
+    // }
 
     fn get_swipe_action(&self, conf_yaml: &Yaml, dir: &str) -> String {
-        let cap_dir = self.capitalize(dir);
-
         return conf_yaml["swipe"]["action"][dir]
             .as_str()
-            .unwrap_or(cap_dir.as_str())
+            .unwrap_or(["super+shift+", dir].concat().as_str())
             .to_string();
     }
+
+    // pub fn get_cmd(&self, cmd: &str) -> (&str, &[&str]) {
+    //     return ("aa", &["bb"]);
+    // }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::default().construct();
 
-    let left_swipe_keybind = &["key", config.left_swipe_action.as_str()];
-    let right_swipe_keybind = &["key", config.right_swipe_action.as_str()];
+    let left_action: Vec<&str> = config.left_swipe_action.split_whitespace().collect();
+    let left_cmd = left_action[0];
+    let left_args = left_action.get(1..).unwrap();
+
+    let right_action: Vec<&str> = config.right_swipe_action.split_whitespace().collect();
+    let right_cmd = right_action[0];
+    let right_args = right_action.get(1..).unwrap();
+
     let mut rt = tokio::runtime::Runtime::new()?;
 
     rt.block_on(async {
@@ -142,18 +150,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // fingers right to left (left swipe), you're swiping the page to the left,
                             // or pulling the next page to you, and vise versa.  Just like a book.
                             let result = if lvdelta.is_some() && rvdelta.is_none() {
-                                Some((lvdelta.unwrap(), left_swipe_keybind))
+                                Some((lvdelta.unwrap(), left_cmd, left_args))
                             } else if rvdelta.is_some() && lvdelta.is_none() {
-                                Some((rvdelta.unwrap(), right_swipe_keybind))
+                                Some((rvdelta.unwrap(), right_cmd, right_args))
                             } else {
                                 None
                             };
 
                             // This cancels out weird events where the user scrolled/swiped both left
                             // and right or their touchpad picked up something weird.
-                            if let Some((vdelta, cmd)) = result {
+                            if let Some((vdelta, cmd, cmd_args)) = result {
                                 if vdelta.abs() >= config.threshold {
-                                    let _ = launch_xdotool(cmd);
+                                    let _ = launch_xdotool(cmd, cmd_args);
                                 }
                             }
                         }
@@ -168,8 +176,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     })
 }
 
-fn launch_xdotool(cmd_opts: &[&str]) -> Result<(), Error> {
-    Command::new("xdotool")
+fn launch_xdotool(cmd: &str, cmd_opts: &[&str]) -> Result<(), Error> {
+    Command::new(cmd)
         .args(cmd_opts)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
