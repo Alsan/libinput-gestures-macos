@@ -16,7 +16,7 @@ This program is very rough, totally hard-coded, and is designed purely (right no
 
 Please note that, my version of this `libinput-gestures-macos` is based on [Tobz](https://github.com/tobz/libinput-gestures-macos)'s implementation, with some bug fix, configuration settings, refactoring.
 
-This is my first time coding in `Rust`, the code may not clean and optimal enough.
+This is my first time coding in `Rust`, the code might not clean and optimal enough.
 
 ## tech specs
 
