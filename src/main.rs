@@ -83,6 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
+
                 // We only handle pointer events.
                 _ => {}
             }
