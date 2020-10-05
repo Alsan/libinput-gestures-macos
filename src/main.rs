@@ -1,25 +1,13 @@
-use futures::future::poll_fn;
 use input::{
     event::pointer::{Axis, AxisSource, PointerEvent, PointerEventTrait},
     event::Event,
-    Libinput, LibinputInterface,
-};
-use mio::unix::EventedFd;
-use mio::{event::Evented, Poll, PollOpt, Ready, Token};
-use nix::{
-    fcntl::{open, OFlag},
-    sys::stat::Mode,
-    unistd::close,
 };
 use std::io::Error;
-use std::os::unix::io::AsRawFd;
-use std::os::unix::io::RawFd;
-use std::path::Path;
 use std::process::{Command, Stdio};
-use std::task::Poll as FuturesPoll;
-use tokio::io::PollEvented;
 
 mod config;
+mod context;
+mod tracking;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let settings = config::Config::default().construct();
@@ -35,12 +23,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut rt = tokio::runtime::Runtime::new()?;
 
     rt.block_on(async {
-        let mut context = LibinputContext::open(settings.device.as_str()).map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "failed to create libinput context",
-            )
-        })?;
+        let mut context =
+            context::LibinputContext::open(settings.device.as_str()).map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "failed to create libinput context",
+                )
+            })?;
 
         context.resume().map_err(|_| {
             std::io::Error::new(
@@ -49,8 +38,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
         })?;
 
-        let mut left_swipe = SwipeTracking::new();
-        let mut right_swipe = SwipeTracking::new();
+        let mut left_swipe = tracking::SwipeTracking::new();
+        let mut right_swipe = tracking::SwipeTracking::new();
 
         while let Ok(e) = context.next().await {
             match e {
@@ -113,126 +102,4 @@ fn launch_xdotool(cmd: &str, cmd_opts: &[&str]) -> Result<(), Error> {
         .wait_with_output()?;
 
     Ok(())
-}
-
-// Tracks the velocity of a swipe.
-struct SwipeTracking {
-    tstart: u64,
-    vtotal: f64,
-}
-
-impl SwipeTracking {
-    pub fn new() -> SwipeTracking {
-        SwipeTracking {
-            tstart: 0,
-            vtotal: 0.0,
-        }
-    }
-
-    pub fn measure_event(&mut self, t: u64, v: f64) {
-        if self.tstart == 0 {
-            self.tstart = t;
-        }
-        self.vtotal += v;
-    }
-
-    pub fn flush(&mut self, t: u64) -> Option<f64> {
-        if self.tstart == 0 {
-            return None;
-        }
-
-        let tdelta = t - self.tstart;
-        let vdelta = self.vtotal / tdelta as f64;
-        self.tstart = 0;
-        self.vtotal = 0.0;
-        Some(vdelta)
-    }
-}
-
-// Basic libinput interface for opening/closing FDs.
-struct BasicLibinputInterface;
-
-impl LibinputInterface for BasicLibinputInterface {
-    fn open_restricted(&mut self, path: &Path, flags: i32) -> Result<RawFd, i32> {
-        open(path, OFlag::from_bits_truncate(flags), Mode::empty())
-            // TODO: we should derive errno from err here but there's no conversion
-            // from Errnp to i32 for w/e god damn reason so...
-            .map_err(|_err| 1)
-    }
-
-    fn close_restricted(&mut self, fd: RawFd) {
-        let _ = close(fd);
-    }
-}
-
-// Wrapper for libinput context that handles the asynchronous aspect.
-struct LibinputContext(Libinput, PollEvented<LibinputEvented>);
-
-impl LibinputContext {
-    pub fn open<P>(p: P) -> Result<LibinputContext, ()>
-    where
-        P: AsRef<str>,
-    {
-        let mut context = Libinput::new_from_path(BasicLibinputInterface);
-        if let None = context.path_add_device(p.as_ref()) {
-            return Err(());
-        }
-
-        let ev = PollEvented::new(LibinputEvented(context.as_raw_fd())).map_err(|_err| ())?;
-
-        Ok(LibinputContext(context, ev))
-    }
-
-    pub fn resume(&mut self) -> Result<(), ()> {
-        self.0.resume()
-    }
-
-    pub async fn next(&mut self) -> Result<Event, ()> {
-        loop {
-            let _ = self.0.dispatch().map_err(|_| ())?;
-
-            match self.0.next() {
-                Some(e) => return Ok(e),
-                None => {
-                    let _ = poll_fn(|cx| self.1.poll_read_ready(cx, Ready::readable()))
-                        .await
-                        .map_err(|_| ())?;
-                    let _ = poll_fn(|cx| {
-                        FuturesPoll::Ready(self.1.clear_read_ready(cx, Ready::readable()))
-                    })
-                    .await
-                    .map_err(|_| ())?;
-                }
-            }
-        }
-    }
-}
-
-// Eventd wrapper for the underlying libinput FD.
-struct LibinputEvented(RawFd);
-
-impl Evented for LibinputEvented {
-    fn register(
-        &self,
-        poll: &Poll,
-        token: Token,
-        interest: Ready,
-        opts: PollOpt,
-    ) -> std::io::Result<()> {
-        EventedFd(&self.0).register(poll, token, interest, opts)
-    }
-
-    fn reregister(
-        &self,
-        poll: &Poll,
-        token: Token,
-        interest: Ready,
-        opts: PollOpt,
-    ) -> std::io::Result<()> {
-        EventedFd(&self.0).reregister(poll, token, interest, opts)
-    }
-
-    fn deregister(&self, poll: &Poll) -> std::io::Result<()> {
-        EventedFd(&self.0).deregister(poll)
-    }
 }
